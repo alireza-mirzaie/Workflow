@@ -1,0 +1,52 @@
+name: Auto Tech Shorts – Cloud Only (YouTube)
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # هر روز 07:00 UTC
+  workflow_dispatch:
+    inputs:
+      rss_url:
+        description: "Custom RSS URL"
+        required: false
+      title_prefix:
+        description: "Title prefix"
+        required: false
+  repository_dispatch:
+    types: [run-autopublish]
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      RSS_URL: ${{ github.event.client_payload.rss_url || github.event.inputs.rss_url || 'https://www.theverge.com/rss/index.xml' }}
+      TITLE_PREFIX: ${{ github.event.client_payload.title_prefix || github.event.inputs.title_prefix || 'خبر داغ تکنولوژی: ' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install feedparser gTTS google-api-python-client google-auth google-auth-oauthlib requests
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg wget
+
+      - name: Fetch tech RSS & write Persian script
+        run: python scripts/make_script.py
+
+      - name: Generate voice (gTTS)
+        run: python scripts/tts.py
+
+      - name: Render vertical video (FFmpeg)
+        run: python scripts/render.py
+
+      - name: Upload to YouTube (official API)
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: python scripts/upload_youtube.py out/final_vertical.mp4 "$(cat out/title.txt)" "$(cat out/desc.txt)"
